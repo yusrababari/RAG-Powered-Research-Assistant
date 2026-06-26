@@ -5,13 +5,12 @@ import chromadb
 
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
-from huggingface_hub import login
-from litellm import completion
+from huggingface_hub import login, InferenceClient
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.tools.arxiv.tool import ArxivQueryRun
 
 load_dotenv()
-gemini_api_key = os.getenv("GEMINI_API_KEY")
+
 huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
 
 if huggingface_token:
@@ -20,6 +19,7 @@ if huggingface_token:
 client = chromadb.PersistentClient(path="chroma_db")
 text_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 arxiv_tool = ArxivQueryRun()
+hf_client = InferenceClient(token=huggingface_token)
 
 def extract_text_from_pdfs(uploaded_files):
     all_text = ""
@@ -28,6 +28,7 @@ def extract_text_from_pdfs(uploaded_files):
         for page in reader.pages:
             all_text += page.extract_text() or ""
     return all_text
+
 def process_text_and_store(all_text):
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=500, chunk_overlap=50, separators=["\n\n", "\n", " ", ""]
@@ -49,6 +50,7 @@ def process_text_and_store(all_text):
             documents=[chunk]
         )
     return collection
+
 def semantic_search(query, collection, top_k=2):
     query_embedding = text_embedding_model.encode(query)
     results = collection.query(
@@ -58,16 +60,17 @@ def semantic_search(query, collection, top_k=2):
 
 def generate_response(query, context):
     prompt = f"Query: {query}\nContext: {context}\nAnswer:"
-    response = completion(
-        model="gemini/gemini-1.5-flash",
-        messages=[{"content": prompt, "role": "user"}],
-        api_key=gemini_api_key
+    response = hf_client.text_generation(
+        prompt,
+        model="mistralai/Mistral-7B-Instruct-v0.3",
+        max_new_tokens=512,
+        temperature=0.7,
     )
-    return response['choices'][0]['message']['content']
+    return response
+
 def main():
     st.title("RAG-powered Research Paper Assistant")
 
-    # Option to choose between PDF upload and arXiv search
     option = st.radio("Choose an option:", ("Upload PDFs", "Search arXiv"))
 
     if option == "Upload PDFs":
@@ -91,16 +94,15 @@ def main():
 
         if st.button("Search ArXiv") and query:
             arxiv_results = arxiv_tool.invoke(query)
-            st.session_state["arxiv_results"] = arxiv_results  
+            st.session_state["arxiv_results"] = arxiv_results
             st.subheader("Search Results:")
             st.write(arxiv_results)
 
             collection = process_text_and_store(arxiv_results)
-            st.session_state["collection"] = collection  
+            st.session_state["collection"] = collection
 
             st.success("arXiv paper content processed and stored successfully!")
 
-        # Only allow querying if search has been performed
         if "arxiv_results" in st.session_state and "collection" in st.session_state:
             query = st.text_input("Ask a question about the paper:")
             if st.button("Execute Query on Paper") and query:
@@ -109,3 +111,6 @@ def main():
                 response = generate_response(query, context)
                 st.subheader("Generated Response:")
                 st.write(response)
+
+if __name__ == "__main__":
+    main()
