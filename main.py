@@ -1,13 +1,14 @@
 import os
-from huggingface_hub import login
 import PyPDF2
 import streamlit as st
-from sentence_transformers import SentenceTransformer
 import chromadb
-from litellm import completion
-from langchain.text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.tools import ArxivQueryRun
+
 from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+from huggingface_hub import login
+from litellm import completion
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.tools.arxiv.tool import ArxivQueryRun
 
 load_dotenv()
 gemini_api_key = os.getenv("GEMINI_API_KEY")
